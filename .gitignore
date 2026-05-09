@@ -1,0 +1,4 @@
+vault-data.json
+vault-users.json
+__pycache__/
+*.pyc
