@@ -1,4 +1,14 @@
+<<<<<<< HEAD
 vault-data.json
 vault-users.json
 __pycache__/
 *.pyc
+=======
+node_modules/
+.env
+*.log
+.DS_Store
+.vscode
+.idea
+test_vault.json
+>>>>>>> 2ddc559d275c10f0dd0763bd123256b840418d6d
