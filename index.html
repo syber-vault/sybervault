@@ -1,24 +1,498 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>SYBER VAULT v8.0 | SECURE TERMINAL</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#000;color:#c0c0c0;font-family:'Courier New',monospace;font-size:14px;overflow-x:hidden;min-height:100vh}
-input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
-@media(max-width:768px){body{font-size:15px}}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔐 SYBER VAULT v8.0 - Encrypted Vault System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a0a;
+            color: #c0c0c0;
+            line-height: 1.6;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #matrixCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+
+        /* Loading Screen */
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            gap: 20px;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(0, 255, 65, 0.2);
+            border-top-color: #00ff41;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            font-size: 14px;
+            color: #00ff41;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .loading-progress {
+            width: 200px;
+            height: 4px;
+            background: rgba(0, 255, 65, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .loading-progress-bar {
+            height: 100%;
+            background: #00ff41;
+            width: 0%;
+            animation: progress 2s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes progress {
+            0% { width: 0%; }
+            50% { width: 100%; }
+            100% { width: 100%; }
+        }
+
+        /* Header */
+        .header {
+            background: rgba(0, 255, 65, 0.05);
+            border-bottom: 2px solid rgba(0, 255, 65, 0.3);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 255, 65, 0.1);
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-title {
+            font-size: 18px;
+            color: #00ff41;
+            font-weight: bold;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+        }
+
+        .header-info {
+            display: flex;
+            gap: 20px;
+            font-size: 11px;
+            color: #666;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid #00ff41;
+            border-radius: 3px;
+            color: #00ff41;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .status-badge.syncing {
+            background: rgba(255, 184, 0, 0.15);
+            border-color: #ffb800;
+            color: #ffb800;
+            animation: pulse 1s infinite;
+        }
+
+        .status-badge.error {
+            background: rgba(255, 26, 26, 0.15);
+            border-color: #ff1a1a;
+            color: #ff1a1a;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        /* Main Container */
+        .main-container {
+            display: flex;
+            flex: 1;
+            gap: 1px;
+            background: #1a1a1a;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: rgba(0, 0, 0, 0.8);
+            border-right: 1px solid rgba(0, 255, 65, 0.1);
+            overflow-y: auto;
+            padding: 15px;
+            z-index: 50;
+        }
+
+        .sidebar h3 {
+            color: #00ff41;
+            font-size: 12px;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+            padding-bottom: 8px;
+        }
+
+        .repo-item {
+            padding: 10px;
+            background: rgba(0, 255, 65, 0.08);
+            border: 1px solid rgba(0, 255, 65, 0.15);
+            border-radius: 3px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 12px;
+        }
+
+        .repo-item:hover {
+            background: rgba(0, 255, 65, 0.15);
+            border-color: rgba(0, 255, 65, 0.3);
+        }
+
+        .repo-count {
+            font-size: 10px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        /* Content Area */
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .toolbar {
+            background: rgba(0, 255, 65, 0.03);
+            border-bottom: 1px solid rgba(0, 255, 65, 0.1);
+            padding: 12px 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 8px 15px;
+            background: transparent;
+            border: 1px solid rgba(0, 255, 65, 0.3);
+            color: #00ff41;
+            cursor: pointer;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:hover {
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .btn.primary {
+            border-color: #00ff41;
+            background: rgba(0, 255, 65, 0.15);
+        }
+
+        .btn.danger {
+            border-color: #ff1a1a;
+            color: #ff1a1a;
+        }
+
+        .btn.danger:hover {
+            background: rgba(255, 26, 26, 0.1);
+        }
+
+        /* Data View */
+        .data-view {
+            flex: 1;
+            overflow: auto;
+            padding: 15px;
+        }
+
+        .stats-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(0, 255, 65, 0.05);
+            border: 1px solid rgba(0, 255, 65, 0.2);
+            padding: 15px;
+            border-radius: 5px;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            color: #00ff41;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #00ff41;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+            padding-bottom: 8px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .data-table th {
+            background: rgba(0, 255, 65, 0.1);
+            padding: 10px;
+            text-align: left;
+            border: 1px solid rgba(0, 255, 65, 0.2);
+            color: #00ff41;
+            font-weight: bold;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .data-table td {
+            padding: 10px;
+            border: 1px solid rgba(0, 255, 65, 0.1);
+            color: #c0c0c0;
+        }
+
+        .data-table tr:hover {
+            background: rgba(0, 255, 65, 0.08);
+        }
+
+        .event-level {
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 10px;
+        }
+
+        .event-level.info {
+            background: rgba(0, 255, 65, 0.15);
+            color: #00ff41;
+        }
+
+        .event-level.warn {
+            background: rgba(255, 184, 0, 0.15);
+            color: #ffb800;
+        }
+
+        .event-level.error {
+            background: rgba(255, 26, 26, 0.15);
+            color: #ff1a1a;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 65, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 65, 0.5);
+        }
+    </style>
 </head>
 <body>
-<div id="app"></div>
-<script src="loader.js"></script>
-<script src="login.js"></script>
-<script src="dashboard.js"></script>
-<script src="vault-core.js"></script>
-<script src="tools.js"></script>
-<script src="admin.js"></script>
+    <!-- Canvas for Matrix Background -->
+    <canvas id="matrixCanvas"></canvas>
+
+    <!-- Main App Container -->
+    <div id="app">
+        <!-- Loading Screen -->
+        <div class="loading-screen" id="loadingScreen">
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loadingText">🔐 INITIALIZING SECURITY SYSTEM...</div>
+            <div class="loading-progress">
+                <div class="loading-progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Modules -->
+    <script src="security/crypto-engine.js"></script>
+    <script src="security/audit-logger.js"></script>
+    <script src="security/rate-limiter.js"></script>
+    <script src="security/session-manager.js"></script>
+    <script src="security/data-vault.js"></script>
+    <script src="security/security-manager.js"></script>
+    <script src="security/auto-data-sync.js"></script>
+    <script src="security/data-persistence.js"></script>
+    <script src="security/gist-manager.js"></script>
+    <script src="security/render-engine.js"></script>
+    <script src="security/enhanced-login.js"></script>
+
+    <!-- Application Initialization -->
+    <script>
+        (async function initApp() {
+            const loadingText = document.getElementById('loadingText');
+            
+            try {
+                // Step 1: Check GitHub Configuration
+                loadingText.textContent = '🔍 Checking GitHub Configuration...';
+                const githubToken = localStorage.getItem('GITHUB_TOKEN');
+                const githubUsername = localStorage.getItem('GITHUB_USERNAME');
+                
+                if (!githubToken || !githubUsername) {
+                    loadingText.textContent = '⚙️ GitHub Setup Required';
+                    setTimeout(() => {
+                        const token = prompt('🔑 Enter your GitHub Personal Access Token:');
+                        if (!token) {
+                            alert('GitHub token is required to use SYBER VAULT');
+                            return;
+                        }
+                        const username = prompt('👤 Enter your GitHub Username:');
+                        if (!username) {
+                            alert('GitHub username is required');
+                            return;
+                        }
+                        localStorage.setItem('GITHUB_TOKEN', token);
+                        localStorage.setItem('GITHUB_USERNAME', username);
+                        window.location.reload();
+                    }, 500);
+                    return;
+                }
+
+                // Step 2: Initialize Data Persistence
+                loadingText.textContent = '💾 Initializing Data Persistence...';
+                await DataPersistence.init();
+
+                // Step 3: Initialize Security Systems
+                loadingText.textContent = '🔐 Initializing Security Systems...';
+                RateLimiter.init();
+                AuditLogger.init();
+                AutoDataSync.init();
+
+                // Step 4: Initialize GitHub Gist Manager
+                loadingText.textContent = '☁️ Connecting to GitHub Gist...';
+                const gistReady = await GistManager.init(githubToken, githubUsername);
+                if (!gistReady) {
+                    throw new Error('Failed to initialize GitHub Gist Manager');
+                }
+
+                // Step 5: Load Vault Data
+                loadingText.textContent = '📂 Loading Vault Data...';
+                let vaultData = await GistManager.loadFromGist();
+                if (!vaultData) {
+                    vaultData = await DataPersistence.loadWithFallback();
+                }
+                window.VAULT_DATA = vaultData || { repos: [], files: {} };
+
+                // Step 6: Initialize Render Engine
+                loadingText.textContent = '🎨 Initializing Render Engine...';
+                RenderEngine.init();
+
+                // Step 7: Render Dashboard
+                loadingText.textContent = '✨ Rendering Dashboard...';
+                setTimeout(() => {
+                    const loadingScreen = document.getElementById('loadingScreen');
+                    if (loadingScreen) loadingScreen.style.display = 'none';
+                    RenderEngine.renderDashboard();
+                }, 500);
+
+                // Log successful initialization
+                AuditLogger.info('SYSTEM_START',
+                    '✅ SYBER VAULT v8.0 initialized successfully',
+                    { user: githubUsername, timestamp: new Date().toISOString() }
+                );
+
+                console.log('%c✅ SYBER VAULT v8.0 Ready!', 'color: #00ff41; font-size: 16px; font-weight: bold;');
+                console.log('%cGithub Gist:', 'color: #00ff41;', GistManager.mainGistId);
+                console.log('%cAuto-sync enabled', 'color: #00ff41;');
+            } catch (e) {
+                loadingText.textContent = '❌ INITIALIZATION FAILED';
+                console.error('[INIT ERROR]', e);
+                setTimeout(() => {
+                    alert('❌ Failed to initialize: ' + e.message + '\n\nCheck console for details.');
+                }, 1000);
+            }
+        })();
+    </script>
 </body>
 </html>
