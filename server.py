@@ -1,276 +1,118 @@
 #!/usr/bin/env python3
-"""
-SYBER VAULT v8.0 - Python Backend Server
-Deploy: Render.com
-Run: python server.py
-"""
+"""SYBER VAULT v8.0 - Server with Bot API"""
+import http.server, json, os, urllib.parse, subprocess, threading, time
 
-import http.server
-import json
-import os
-import urllib.parse
-import datetime
-import hashlib
-import time
-import sys
-
-# Port from environment (Render sets this)
 PORT = int(os.environ.get('PORT', 8080))
 DATA_FILE = 'vault-data.json'
-USERS_FILE = 'vault-users.json'
+bot_processes = {}
 
-# ═══════════════════════════════════════
-# DEFAULT DATA
-# ═══════════════════════════════════════
-DEFAULT_DATA = {
-    "users": [
-        {
-            "username": "sybervault",
-            "email": "sybervault@gmail.com",
-            "password": "sybervault@209209",
-            "role": "main_admin",
-            "permissions": {}
-        }
-    ],
-    "repos": [
-        {
-            "id": "d1",
-            "name": "SyberVault",
-            "icon": "fa-database",
-            "type": "normal",
-            "date": "2026-05-09"
-        }
-    ],
-    "files": {
-        "d1": []
-    },
-    "logs": [],
-    "deployments": [],
-    "settings": {
-        "maintenanceMode": False,
-        "sessionTimeout": "30min",
-        "fileChangeAlert": True,
-        "honeypotActive": False
-    }
-}
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE,'r') as f: return json.load(f)
+    return {"repos":[],"files":{}}
 
-USERS_DEFAULT = [
-    {
-        "username": "sybervault",
-        "email": "sybervault@gmail.com",
-        "password": "sybervault@209209",
-        "role": "main_admin",
-        "permissions": {},
-        "token": ""
-    }
-]
-
-# ═══════════════════════════════════════
-# HELPERS
-# ═══════════════════════════════════════
-def load_json(filename, default=None):
-    try:
-        if os.path.exists(filename):
-            with open(filename, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        else:
-            if default is not None:
-                save_json(filename, default)
-            return default
-    except Exception as e:
-        print(f"[ERROR] Loading {filename}: {e}")
-        return default if default is not None else {}
-
-def save_json(filename, data):
-    try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception as e:
-        print(f"[ERROR] Saving {filename}: {e}")
-        return False
-
-def generate_token():
-    return hashlib.sha256(str(time.time()).encode()).hexdigest()[:32]
-
-def get_time():
-    return datetime.datetime.now().strftime('%H:%M:%S')
-
-# ═══════════════════════════════════════
-# HTTP HANDLER
-# ═══════════════════════════════════════
-class SyberVaultHandler(http.server.SimpleHTTPRequestHandler):
-    
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        self.end_headers()
-    
-    def send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
-    
-    def read_body(self):
-        try:
-            length = int(self.headers.get('Content-Length', 0))
-            if length > 0:
-                return json.loads(self.rfile.read(length).decode('utf-8'))
-        except:
-            pass
-        return {}
-    
-    def serve_static(self, path):
-        if os.path.exists(path):
-            ext = os.path.splitext(path)[1]
-            types = {'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}
-            self.send_response(200)
-            self.send_header('Content-Type', types.get(ext, 'text/plain'))
-            self.end_headers()
-            with open(path, 'rb') as f:
-                self.wfile.write(f.read())
-        else:
-            self.send_json({'error':'Not found'}, 404)
-    
+class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         p = urllib.parse.urlparse(self.path).path
         
-        routes = {
-            '/api/health': lambda: self.send_json({
-                'status': 'ACTIVE', 'server': 'SyberVault v8.0',
-                'timestamp': datetime.datetime.now().isoformat()
-            }),
-            '/api/data': lambda: self.send_json(load_json(DATA_FILE, DEFAULT_DATA)),
-            '/api/logs': lambda: self.send_json(load_json(DATA_FILE, DEFAULT_DATA).get('logs', [])),
-            '/api/deployments': lambda: self.send_json(load_json(DATA_FILE, DEFAULT_DATA).get('deployments', []))
-        }
+        # Bot APIs
+        if p == '/api/bot/list':
+            bots = []
+            for name, proc in bot_processes.items():
+                bots.append({'name':name, 'pid':proc.pid, 'running':proc.poll() is None})
+            self.send_json(bots)
+            return
         
-        if p in routes:
-            routes[p]()
-        elif p == '/' or p == '':
-            self.serve_static('index.html')
+        if p == '/api/bot/logs':
+            name = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('name',[''])[0]
+            self.send_json({'logs':['Bot log line 1','Bot log line 2']})
+            return
+        
+        # Vault API
+        if p.startswith('/vault/'):
+            repo_name = p.split('/vault/')[-1]
+            token = self.headers.get('Authorization','').replace('Bearer ','')
+            data = load_data()
+            repo = next((r for r in data.get('repos',[]) if r['name']==repo_name),None)
+            if not repo: self.send_json({'error':'Not found'},404); return
+            if repo.get('isPublic',False) or token == repo.get('token',''):
+                self.send_json({'name':repo_name,'files':data.get('files',{}).get(repo['id'],[])})
+            else:
+                self.send_json({'error':'PRIVATE. Use token.','hint':'curl -H "Authorization: Bearer TOKEN" '+self.path},403)
+            return
+        
+        # Static files
+        if p == '/' or p == '': p = '/index.html'
+        filepath = '.' + p
+        if os.path.exists(filepath):
+            self.send_response(200)
+            ext = os.path.splitext(filepath)[1]
+            ct = {'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}
+            self.send_header('Content-Type',ct.get(ext,'text/plain'))
+            self.send_header('X-Frame-Options','DENY')
+            self.end_headers()
+            with open(filepath,'rb') as f: self.wfile.write(f.read())
         else:
-            filepath = p.lstrip('/')
-            self.serve_static(filepath if os.path.exists(filepath) else 'index.html')
+            self.send_json({'error':'Not found'},404)
     
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
-        body = self.read_body()
+        content_len = int(self.headers.get('Content-Length',0))
+        body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
         
-        if p == '/api/login':
-            username = body.get('username', '')
-            password = body.get('password', '')
+        # Start Bot
+        if p == '/api/bot/start':
+            name = body.get('name','bot')
+            bot_type = body.get('type','facebook')
+            repo_id = body.get('repoId','')
             
-            users = load_json(USERS_FILE, USERS_DEFAULT)
-            data_users = load_json(DATA_FILE, DEFAULT_DATA).get('users', [])
-            all_users = users + data_users
+            # Kill existing
+            if name in bot_processes:
+                try: bot_processes[name].kill()
+                except: pass
             
-            user = next((u for u in all_users if u['username'] == username), None)
-            
-            if user and user.get('password') == password:
-                token = generate_token()
-                user['token'] = token
-                save_json(USERS_FILE, users)
-                
-                self.send_json({
-                    'success': True, 'token': token,
-                    'user': {
-                        'username': user['username'],
-                        'role': user.get('role', 'viewer'),
-                        'email': user.get('email', ''),
-                        'permissions': user.get('permissions', {})
-                    }
-                })
+            # Start new bot (simulation for testing)
+            cmd = ['node', '-e', 'console.log("🤖 Bot started: '+name+'"); setInterval(function(){console.log("[LOG] Bot running... "+new Date().toLocaleTimeString());},3000);']
+            try:
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                bot_processes[name] = proc
+                self.send_json({'ok':True,'pid':proc.pid,'name':name})
+            except Exception as e:
+                self.send_json({'ok':False,'error':str(e)})
+            return
+        
+        # Stop Bot
+        if p == '/api/bot/stop':
+            name = body.get('name','')
+            if name in bot_processes:
+                try: bot_processes[name].kill()
+                except: pass
+                del bot_processes[name]
+                self.send_json({'ok':True})
             else:
-                self.send_json({'error': 'Invalid credentials'}, 401)
+                self.send_json({'ok':False,'error':'Not found'})
+            return
         
-        elif p == '/api/save':
-            new_data = body.get('data', {})
-            if new_data:
-                save_json(DATA_FILE, new_data)
-                self.send_json({'success': True})
-            else:
-                self.send_json({'error': 'No data'}, 400)
-        
-        elif p == '/api/deploy/save':
-            data = load_json(DATA_FILE, DEFAULT_DATA)
-            deployments = body.get('deployments', [])
-            data['deployments'] = deployments
-            save_json(DATA_FILE, data)
-            self.send_json({'success': True})
-        
-        elif p == '/api/users/add':
-            username = body.get('username', '')
-            password = body.get('password', '')
-            role = body.get('role', 'viewer')
-            
-            if not username or not password:
-                self.send_json({'error': 'Username and password required'}, 400)
-                return
-            
-            users = load_json(USERS_FILE, USERS_DEFAULT)
-            if any(u['username'] == username for u in users):
-                self.send_json({'error': 'User exists'}, 400)
-                return
-            
-            users.append({'username': username, 'email': body.get('email', ''), 'password': password, 'role': role, 'permissions': {}, 'token': ''})
-            save_json(USERS_FILE, users)
-            self.send_json({'success': True})
-        
-        else:
-            self.send_json({'error': 'Not found'}, 404)
+        self.send_json({'error':'Not found'},404)
     
-    def do_DELETE(self):
-        p = urllib.parse.urlparse(self.path).path
-        
-        if p == '/api/logs':
-            data = load_json(DATA_FILE, DEFAULT_DATA)
-            data['logs'] = []
-            save_json(DATA_FILE, data)
-            self.send_json({'success': True})
-        
-        elif p.startswith('/api/users/'):
-            username = p.split('/')[-1]
-            users = load_json(USERS_FILE, USERS_DEFAULT)
-            users = [u for u in users if u['username'] != username]
-            save_json(USERS_FILE, users)
-            self.send_json({'success': True})
-        
-        elif p.startswith('/api/deployments/'):
-            dep_id = p.split('/')[-1]
-            data = load_json(DATA_FILE, DEFAULT_DATA)
-            data['deployments'] = [d for d in data.get('deployments', []) if d.get('id') != dep_id]
-            save_json(DATA_FILE, data)
-            self.send_json({'success': True})
-        
-        else:
-            self.send_json({'error': 'Not found'}, 404)
+    def send_json(self,data,status=200):
+        self.send_response(status)
+        self.send_header('Content-Type','application/json')
+        self.send_header('Access-Control-Allow-Origin','*')
+        self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS')
+        self.send_header('Access-Control-Allow-Headers','Content-Type,Authorization')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
     
-    def log_message(self, format, *args):
-        print(f"[{get_time()}] {args[0]}")
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin','*')
+        self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS')
+        self.send_header('Access-Control-Allow-Headers','Content-Type,Authorization')
+        self.end_headers()
 
-# ═══════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════
 if __name__ == '__main__':
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    
-    print("╔══════════════════════════════════════╗")
-    print("║     💀 SYBER VAULT v8.0             ║")
-    print("║     Python Server Ready             ║")
-    print(f"║     Port: {PORT}                       ║")
-    print("╚══════════════════════════════════════╝")
-    
-    httpd = http.server.HTTPServer(('0.0.0.0', PORT), SyberVaultHandler)
-    
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\n[STOP] Server stopped")
-        httpd.server_close()
+    httpd = http.server.HTTPServer(('0.0.0.0',PORT),Handler)
+    print(f'💀 SYBER VAULT v8.0 | Port {PORT}')
+    print(f'🤖 Bot API: /api/bot/start | /api/bot/stop | /api/bot/list')
+    httpd.serve_forever()
